@@ -6,13 +6,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medha.dockerizedrestapi.dto.CategoryRequest;
 import com.medha.dockerizedrestapi.dto.ProductRequest;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -21,6 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * End-to-end test that boots the full Spring context against a real, disposable MySQL instance
@@ -52,7 +52,7 @@ class ProductApiIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private JsonMapper jsonMapper;
 
     @Test
     void createCategoryThenProduct_persistsAndLinksThemAcrossRealMySql() throws Exception {
@@ -60,23 +60,23 @@ class ProductApiIntegrationTest {
 
         String categoryJson = mockMvc.perform(post("/api/v1/categories")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(categoryRequest)))
+                        .content(jsonMapper.writeValueAsString(categoryRequest)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 
-        Long categoryId = objectMapper.readTree(categoryJson).get("id").asLong();
+        Long categoryId = jsonMapper.readTree(categoryJson).get("id").asLong();
 
         ProductRequest productRequest = new ProductRequest("Building Blocks", "TOY-100",
                 "120-piece wooden block set", new BigDecimal("24.99"), 200, categoryId);
 
         String productJson = mockMvc.perform(post("/api/v1/products")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(productRequest)))
+                        .content(jsonMapper.writeValueAsString(productRequest)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.categoryName").value("Toys"))
                 .andReturn().getResponse().getContentAsString();
 
-        Long productId = objectMapper.readTree(productJson).get("id").asLong();
+        Long productId = jsonMapper.readTree(productJson).get("id").asLong();
 
         mockMvc.perform(get("/api/v1/products/{id}", productId))
                 .andExpect(status().isOk())
