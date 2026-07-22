@@ -1,0 +1,15 @@
+target/
+.git/
+.gitignore
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
+Dockerfile
+docker-compose.yml
+docker/
+.mvn/
+mvnw
+mvnw.cmd
+.env

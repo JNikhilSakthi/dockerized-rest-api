@@ -1,0 +1,74 @@
+name: dockerized-rest-api
+
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: catalog-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: ${DB_NAME:-catalog_db}
+      MYSQL_USER: ${DB_USERNAME:-catalog_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-catalog_pass}
+    ports:
+      - "${MYSQL_EXPOSED_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - catalog-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dockerized-rest-api:local
+    container_name: catalog-app
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-catalog_db}
+      DB_USERNAME: ${DB_USERNAME:-catalog_user}
+      DB_PASSWORD: ${DB_PASSWORD:-catalog_pass}
+      JAVA_OPTS: ${JAVA_OPTS:-}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - catalog-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/actuator/health/liveness"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  adminer:
+    image: adminer:4.8.1
+    container_name: catalog-adminer
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql
+    ports:
+      - "${ADMINER_PORT:-8081}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - catalog-net
+
+networks:
+  catalog-net:
+    driver: bridge
+
+volumes:
+  mysql_data:
