@@ -4,7 +4,7 @@
 # Stage 1: build - compiles the app with Maven inside a throwaway container.
 # The host does not need Maven or a JDK installed at all; only Docker.
 # ---------------------------------------------------------------------------
-FROM maven:3.9.9-eclipse-temurin-21 AS build
+FROM maven:3.9.11-eclipse-temurin-25 AS build
 WORKDIR /workspace
 
 # Copy only the POM first so Docker can cache the downloaded dependency layer
@@ -21,7 +21,7 @@ RUN mvn -B -q clean package -DskipTests \
 # source tree from stage 1 are discarded, keeping the final image small and
 # free of build-time attack surface.
 # ---------------------------------------------------------------------------
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:25-jre-alpine AS runtime
 
 # Run as a non-root, unprivileged user rather than the image default of root.
 RUN addgroup -S spring && adduser -S spring -G spring
