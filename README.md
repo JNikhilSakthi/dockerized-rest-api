@@ -2,8 +2,8 @@
 
 A Spring Boot product catalog service, packaged and shipped entirely through Docker — a two-stage build, a non-root runtime image, an Actuator-backed `HEALTHCHECK`, and a full `docker compose` stack (app + MySQL + Adminer) that comes up with one command.
 
-![Java](https://img.shields.io/badge/Java-21-orange)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.4-brightgreen)
+![Java](https://img.shields.io/badge/Java-25-orange)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.6-brightgreen)
 ![Docker](https://img.shields.io/badge/Docker-multi--stage-blue)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1)
 ![Testcontainers](https://img.shields.io/badge/Testcontainers-1.20.1-orange)
@@ -146,18 +146,18 @@ dockerized-rest-api/
 
 | Layer | Technology | Why |
 |---|---|---|
-| Language / runtime | Java 21 | LTS, required by Spring Boot 3.3.x |
-| Framework | Spring Boot 3.3.4 (Web, Data JPA, Validation, Actuator) | standard roadmap stack |
+| Language / runtime | Java 25 (LTS) | required by Spring Boot 4.0.x |
+| Framework | Spring Boot 4.0.6 (Web, Data JPA, Validation, Actuator) | standard roadmap stack |
 | Database | MySQL 8.0 | real relational engine, same image in compose and Testcontainers |
 | DB driver | `mysql-connector-j` | official MySQL JDBC driver |
-| Boilerplate reduction | Lombok (`@Getter`/`@Setter`/etc.) | keeps entities terse; excluded from the final runtime jar |
+| Boilerplate reduction | Lombok 1.18.44 (`@Getter`/`@Setter`/etc.) | keeps entities terse; excluded from the final runtime jar; 1.18.44 is the first line to fully support JDK 25 annotation processing |
 | Validation | Jakarta Bean Validation (`spring-boot-starter-validation`) | declarative request validation on DTOs |
 | Ops/observability | Spring Boot Actuator | backs the container `HEALTHCHECK` and compose `service_healthy` gate |
-| Containerization | Docker (multi-stage build) | reproducible, minimal, non-root runtime image |
+| Containerization | Docker (multi-stage build, JDK/JRE 25 base images) | reproducible, minimal, non-root runtime image |
 | Orchestration (local) | Docker Compose | app + MySQL + Adminer as one declared stack |
 | DB admin UI | Adminer 4.8.1 | zero-config browser UI for inspecting MySQL during development |
 | Unit testing | JUnit 5 + Mockito + AssertJ | service-layer logic in isolation |
-| Web-layer testing | `@WebMvcTest` + MockMvc | controller/HTTP-contract tests without a real server or DB |
+| Web-layer testing | `@WebMvcTest` + MockMvc (`spring-boot-starter-webmvc-test`) | controller/HTTP-contract tests without a real server or DB |
 | Integration testing | Testcontainers (`mysql:8.0`) | full Spring context against a real, disposable MySQL instance |
 | Build tool | Maven (`maven-compiler-plugin`, `spring-boot-maven-plugin`) | compiles and packages the executable jar used by the Dockerfile |
 
@@ -247,7 +247,7 @@ Seeds 3 categories (`Electronics`, `Books`, `Home & Kitchen`) and 4 products (`E
 | `.dockerignore` | Keeps `target/`, `.git/`, IDE files, and `.env` out of the build context sent to the Docker daemon. |
 | `.env.example` | Documents every overridable compose variable (DB credentials, ports, `JAVA_OPTS`); copy to `.env` to customize. |
 | `.gitignore` | Standard Java/IDE ignores, plus `.env` so real secrets never get committed. |
-| `pom.xml` | Maven build: Spring Boot 3.3.4 parent, Java 21, Testcontainers BOM, explicit Lombok annotation-processor path (see design notes below). |
+| `pom.xml` | Maven build: Spring Boot 4.0.6 parent, Java 25, Testcontainers BOM, explicit Lombok 1.18.44 annotation-processor path, and the `spring-boot-starter-webmvc-test` starter required for `@WebMvcTest` under Boot 4's module split (see design notes below). |
 | `domain/Category.java`, `domain/Product.java`, `domain/ProductStatus.java` | JPA entities and the product lifecycle enum. |
 | `repository/*` | Spring Data JPA repositories with derived-query finders (`findByNameIgnoreCase`, `existsBySkuIgnoreCase`, `findByCategoryId`). |
 | `dto/*` | Immutable Java `record` request/response DTOs with Jakarta Bean Validation annotations. |
@@ -300,7 +300,7 @@ docker compose logs -f app
 ```
 
 ### Run without Docker (for comparison)
-With a local JDK 21 + Maven + MySQL running on `localhost:3306` with a `catalog_db` database and `catalog_user`/`catalog_pass` credentials:
+With a local JDK 25 + Maven + MySQL running on `localhost:3306` with a `catalog_db` database and `catalog_user`/`catalog_pass` credentials:
 ```bash
 ./mvnw spring-boot:run
 ```
@@ -436,10 +436,10 @@ Three layers of tests, matching the three trust boundaries in the architecture:
 ```
 
 - **`CategoryServiceImplTest` / `ProductServiceImplTest`** (Mockito, `@ExtendWith(MockitoExtension.class)`) — exercise `CategoryServiceImpl`/`ProductServiceImpl` with the repositories mocked, covering: successful create, duplicate-name/duplicate-SKU rejection, not-found on get/update/delete, rename collision detection, and category-filtered vs. unfiltered product listing.
-- **`ProductControllerTest`** (`@WebMvcTest(ProductController.class)` + MockMvc, `ProductService` mocked via `@MockBean`) — verifies the actual HTTP contract: `201` with a populated body on valid create, `400` with a `validationErrors.price` entry on a negative price, `409` with the duplicate-SKU message on a thrown `DuplicateResourceException`, `404` on a thrown `ResourceNotFoundException`, and `204` on delete.
+- **`ProductControllerTest`** (`@WebMvcTest(ProductController.class)` + MockMvc, `ProductService` mocked via `@MockitoBean`) — verifies the actual HTTP contract: `201` with a populated body on valid create, `400` with a `validationErrors.price` entry on a negative price, `409` with the duplicate-SKU message on a thrown `DuplicateResourceException`, `404` on a thrown `ResourceNotFoundException`, and `204` on delete. Serializes/deserializes the JSON bodies via the Jackson 3 `JsonMapper` bean that Spring Boot 4 auto-configures (the classic Jackson 2 `ObjectMapper` is no longer auto-configured by default).
 - **`ProductApiIntegrationTest`** (`@SpringBootTest` + `@AutoConfigureMockMvc` + Testcontainers `MySQLContainer("mysql:8.0")`) — boots the *full* Spring context against a real, disposable MySQL 8.0 container (the same image `docker-compose.yml` uses), overriding datasource properties via `@DynamicPropertySource` and disabling the demo seed (`spring.sql.init.mode=never`) for test isolation. It creates a category, creates a product linked to it, and asserts the product is retrievable and the category's `productCount` reflects the link — proving the full stack (controller → service → JPA → real MySQL) end to end.
 
-> Note from the build: all 19 unit/MockMvc tests pass. The Testcontainers integration test needs a Docker socket the test JVM can launch containers against; it does not run in Docker-in-Docker-restricted sandboxes, but works normally on a developer machine or CI runner with Docker available.
+> Note from the Spring Boot 4.0.6 / Java 25 migration: all 19 unit/MockMvc tests pass unchanged in behavior. The Testcontainers integration test still needs a Docker socket the test JVM can launch containers against; it does not run in Docker-in-Docker-restricted sandboxes, but works normally on a developer machine or CI runner with Docker available.
 
 ---
 
@@ -448,14 +448,14 @@ Three layers of tests, matching the three trust boundaries in the architecture:
 ### `Dockerfile` — two-stage build
 
 ```dockerfile
-FROM maven:3.9.9-eclipse-temurin-21 AS build
+FROM maven:3.9.11-eclipse-temurin-25 AS build
 WORKDIR /workspace
 COPY pom.xml .
 RUN mvn -B -q dependency:go-offline
 COPY src ./src
 RUN mvn -B -q clean package -DskipTests && cp target/dockerized-rest-api.jar target/app.jar
 
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:25-jre-alpine AS runtime
 RUN addgroup -S spring && adduser -S spring -G spring
 WORKDIR /app
 COPY --from=build /workspace/target/app.jar app.jar
@@ -467,8 +467,8 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -XX:MaxRAMPercentage=75.0 -jar app.jar"]
 ```
 
-- **Stage 1 (`build`)** uses the full `maven:3.9.9-eclipse-temurin-21` image (JDK + Maven) purely to compile. Copying `pom.xml` first and running `dependency:go-offline` before copying `src/` lets Docker cache the downloaded-dependencies layer — code-only changes skip re-downloading the entire Maven repo.
-- **Stage 2 (`runtime`)** starts fresh from `eclipse-temurin:21-jre-alpine` — a JRE only, Alpine-based, so no Maven, no JDK compiler, no source tree ends up in the shipped image. Only `app.jar` is copied across the stage boundary via `COPY --from=build`.
+- **Stage 1 (`build`)** uses the full `maven:3.9.11-eclipse-temurin-25` image (JDK 25 + Maven) purely to compile. Copying `pom.xml` first and running `dependency:go-offline` before copying `src/` lets Docker cache the downloaded-dependencies layer — code-only changes skip re-downloading the entire Maven repo.
+- **Stage 2 (`runtime`)** starts fresh from `eclipse-temurin:25-jre-alpine` — a JRE only, Alpine-based, so no Maven, no JDK compiler, no source tree ends up in the shipped image. Only `app.jar` is copied across the stage boundary via `COPY --from=build`.
 - **Non-root user** (`spring:spring`) — the container runs as an unprivileged user rather than image-default root, limiting the blast radius if the app process is ever compromised.
 - **`HEALTHCHECK`** polls Spring Boot Actuator's `/actuator/health/liveness` endpoint with `wget` (present in the Alpine base) — this is the same liveness signal a Kubernetes `livenessProbe` would use, and it's what `docker-compose.yml`'s `depends_on: condition: service_healthy` gate reads for the `app` service itself.
 - **`-XX:MaxRAMPercentage=75.0`** bounds JVM heap to 75% of the container's memory limit (rather than the JVM guessing from host-level memory), and `$JAVA_OPTS` is left as an escape hatch for ad-hoc flags at `docker run`/compose time.
